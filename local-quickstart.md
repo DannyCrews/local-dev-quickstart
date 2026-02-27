@@ -155,7 +155,7 @@ When macOS asks for Keychain access, click **Always Allow**. When asked whether 
 npx buwp-local init --sandbox
 ```
 
-> **Note:** The `--sandbox` flag is documented in [VOLUME_MAPPINGS.md](buwp-local/docs/VOLUME_MAPPINGS.md) but does not appear in the [COMMANDS.md](buwp-local/docs/COMMANDS.md) reference. If `--sandbox` is not recognized, run `npx buwp-local init` without a flag and choose the sandbox type from the interactive prompt.
+You can also run `npx buwp-local init` without a flag to choose the sandbox type from the interactive prompt.
 
 **5. Edit `.buwp-local.json` to map your repos:**
 
@@ -238,6 +238,20 @@ Access your site at: https://my-plugin.local
 
 ---
 
+### 4 — Start the Shibboleth daemon
+
+The Shibboleth daemon does not auto-start with the container. You need to start it manually after every `start`:
+
+```bash
+npx buwp-local shell
+service shibd start
+exit
+```
+
+Without this step, pages that require authentication will show a "Cannot connect to shibd process" error.
+
+---
+
 ## Accessing the Site
 
 ### SSL warning
@@ -246,9 +260,9 @@ The environment uses a self-signed certificate. Your browser will warn you about
 
 ---
 
-### Shibboleth error on first load
+### Shibboleth error after starting
 
-If you see a "Cannot connect to shibd process" error, the Shibboleth authentication daemon didn't start automatically. This is a known issue. Fix it by starting it manually:
+If you see a "Cannot connect to shibd process" error, the Shibboleth authentication daemon hasn't started yet. This happens after every `start` (not just the first time) because the shibd service does not auto-start with the container. Fix it by starting it manually:
 
 ```bash
 npx buwp-local shell    # Opens a terminal inside the WordPress container
@@ -293,15 +307,9 @@ npx buwp-local wp site-manager snapshot-pull \
   --destination=http://my-plugin.local/my-site
 ```
 
-This downloads the database and media files from the source site into your local environment.
+This downloads the database and media files from the source site into your local environment. The command runs immediately — no additional processes are needed.
 
-While the pull runs, open a second terminal tab in the same project directory and run the job queue processor:
-
-```bash
-npx buwp-local watch-jobs
-```
-
-Leave it running until the pull completes. Note that `watch-jobs` requires the site-manager plugin to be installed and activated in your WordPress environment.
+> **Note about `watch-jobs`:** The `watch-jobs` command is a separate tool for processing snapshot jobs queued through the **WordPress admin UI** (Network Admin → Site Manager). It replaces the production cron job that processes those queued jobs. You do not need `watch-jobs` when using `snapshot-pull` from the command line — `snapshot-pull` runs the import directly.
 
 ---
 
@@ -326,6 +334,8 @@ All commands are run from your **project directory** (where `.buwp-local.json` l
 | `npx buwp-local init` | Interactive setup — creates `.buwp-local.json` |
 | `npx buwp-local start` | Start all containers |
 | `npx buwp-local start --xdebug` | Start with Xdebug enabled |
+| `npx buwp-local start --no-s3` | Start without the S3 proxy service |
+| `npx buwp-local start --no-redis` | Start without Redis |
 | `npx buwp-local stop` | Stop containers — your database and content are preserved |
 | `npx buwp-local destroy` | Remove all containers and data — full reset |
 | `npx buwp-local logs` | View recent logs from all containers |
@@ -335,7 +345,7 @@ All commands are run from your **project directory** (where `.buwp-local.json` l
 | `npx buwp-local wp plugin list` | List all plugins and their status |
 | `npx buwp-local wp plugin activate <slug>` | Activate a plugin |
 | `npx buwp-local wp cache flush` | Flush the Redis object cache |
-| `npx buwp-local watch-jobs` | Process site-manager jobs (run in a separate terminal) |
+| `npx buwp-local watch-jobs` | Process admin UI snapshot queue jobs (run in a separate terminal) |
 | `npx buwp-local update` | Pull the latest WordPress image, preserve your database |
 | `npx buwp-local config --validate` | Validate your `.buwp-local.json` |
 | `npx buwp-local keychain status` | Check that credentials are loaded correctly |
