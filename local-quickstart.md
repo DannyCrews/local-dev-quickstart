@@ -329,8 +329,6 @@ The command runs synchronously and prints `Success: Snapshot pulled and installe
 
 > **What snapshots are available?** The Snapshot Management admin UI (Method 2 below) shows all available snapshots organized by source hostname. Ask a teammate maintaining the devl environment if you're unsure what's been pushed.
 
-> **PHP 8 compatibility note:** The buwp-local Docker image ships with PHP 8. Snapshots from older BU sites built on PHP 7 may show errors or blank pages after import — the pull itself will succeed, but the site may be broken. See [Pulled snapshot shows PHP errors](#pulled-snapshot-shows-php-errors) in Troubleshooting if this happens.
-
 ---
 
 #### Method 2 — Snapshot Management admin UI
@@ -397,16 +395,6 @@ npx buwp-local update
 This pulls the latest Docker image and resets WordPress core back to the version baked into the image. Your **database is preserved** — content, users, and plugin settings survive. The WordPress core files are replaced.
 
 > **Good practice:** Run `npx buwp-local update` periodically even when you're not switching versions — it also picks up security patches and BU plugin updates that ship with new image releases.
-
-### PHP 8 and snapshot compatibility
-
-The current buwp-local image ships with **PHP 8**. WordPress and most modern plugins are fully compatible, but some older BU site snapshots were built on PHP 7 and will produce errors (fatal errors, blank pages, or admin screens that won't load) on the newer image.
-
-If a pulled snapshot is broken:
-
-- Check with whoever maintains that environment — they can tell you what PHP version it was built on
-- As a workaround, you can downgrade WordPress to a version that shipped with PHP 7 compatibility in mind (6.4 or earlier), but this won't fix plugins that hard-require PHP 7 syntax
-- The longer-term fix is for the source environment to be updated for PHP 8 compatibility
 
 ---
 
@@ -525,16 +513,6 @@ docker exec $(docker ps --filter "name=wordpress" --format "{{.Names}}" | head -
 
 ---
 
-### Pulled snapshot shows PHP errors
-
-The site loads blank, shows a fatal error, or the WordPress admin won't open after a snapshot pull.
-
-The snapshot was built on a PHP 7 environment and the buwp-local image ships with PHP 8. The import succeeded, but PHP 8 is not fully backward-compatible with older code.
-
-Check with the team that maintains the source environment. If you need an older PHP environment for testing, ask in Slack — older image tags may be available.
-
----
-
 ### buwp-local: command not found
 
 The npm package is not installed in this directory. Make sure you're in your project directory (the one with `.buwp-local.json` and `package.json`) and run:
@@ -611,10 +589,10 @@ The `init` command generates this file for you. Here's a full example with all f
 
 ## Further Reading
 
-All documentation lives in the `docs/` folder inside buwp-local:
+All documentation lives in the `docs/` folder inside the buwp-local repo ([github.com/jdub233/buwp-local](https://github.com/jdub233/buwp-local)):
 
-- **[COMMANDS.md](buwp-local/docs/COMMANDS.md)** — Full reference for every command and flag
-- **[VOLUME_MAPPINGS.md](buwp-local/docs/VOLUME_MAPPINGS.md)** — Detailed guide to all three development patterns
-- **[XDEBUG.md](buwp-local/docs/XDEBUG.md)** — Step debugging setup for VS Code, PHPStorm, and Zed
-- **[CREDENTIALS.md](buwp-local/docs/CREDENTIALS.md)** — How credential storage and overrides work
-- **[MIGRATION_FROM_VM.md](buwp-local/docs/MIGRATION_FROM_VM.md)** — Coming from the old VM sandbox workflow
+- **[COMMANDS.md](https://github.com/jdub233/buwp-local/blob/main/docs/COMMANDS.md)** — Full reference for every command and flag
+- **[VOLUME_MAPPINGS.md](https://github.com/jdub233/buwp-local/blob/main/docs/VOLUME_MAPPINGS.md)** — Detailed guide to all three development patterns
+- **[XDEBUG.md](https://github.com/jdub233/buwp-local/blob/main/docs/XDEBUG.md)** — Step debugging setup for VS Code, PHPStorm, and Zed
+- **[CREDENTIALS.md](https://github.com/jdub233/buwp-local/blob/main/docs/CREDENTIALS.md)** — How credential storage and overrides work
+- **[MIGRATION_FROM_VM.md](https://github.com/jdub233/buwp-local/blob/main/docs/MIGRATION_FROM_VM.md)** — Coming from the old VM sandbox workflow
