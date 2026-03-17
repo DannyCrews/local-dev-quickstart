@@ -1,6 +1,6 @@
 # buwp-local Quickstart
 
-**buwp-local** runs a complete BU WordPress environment on your laptop using Docker. Your code lives on your local filesystem and is reflected live in the running site. No more monthly VM rebuilds that wipe your work.
+**buwp-local** runs a complete BU WordPress environment on your laptop using Docker. Your code lives on your local filesystem and is reflected live in the running site.
 
 The environment includes the same backend services as production — Redis (caching), S3 (file storage), and Shibboleth (BU login). **You don't need to understand any of those to use this tool.** buwp-local takes care of them automatically.
 
