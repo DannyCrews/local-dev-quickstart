@@ -1,8 +1,10 @@
 # buwp-local Quickstart
 
-**buwp-local** runs a complete BU WordPress environment on your laptop — the same stack as production, including multisite, Redis, S3, and Shibboleth SSO — using Docker. Your code lives on your local filesystem and is reflected live in the running site. No more monthly VM rebuilds that wipe your work.
+**buwp-local** runs a complete BU WordPress environment on your laptop using Docker. Your code lives on your local filesystem and is reflected live in the running site. No more monthly VM rebuilds that wipe your work.
 
-> **New to this tool?** The key mental shift from hosting or VM-based workflows: you don't upload or install the plugin/theme you're building. You tell buwp-local where it lives on your Mac, and it mounts it directly into WordPress. The WordPress admin is where you activate and test it — just like production.
+The environment includes the same backend services as production — Redis (caching), S3 (file storage), and Shibboleth (BU login). **You don't need to understand any of those to use this tool.** buwp-local takes care of them automatically.
+
+> **New to this tool?** The key mental shift: you don't upload or install the plugin/theme you're building. You tell buwp-local where it lives on your Mac, and it mounts it directly into WordPress. The WordPress admin is where you activate and test it — just like production.
 
 ---
 
@@ -13,7 +15,7 @@
 | **Docker Desktop** | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) — install and make sure it can run |
 | **Node.js 18+** | [nodejs.org](https://nodejs.org) |
 | **GitHub account** | Must be a member of the [bu-ist](https://github.com/bu-ist) org |
-| **GitHub personal access token** | `read:packages` scope required — [create one here](https://github.com/settings/tokens) |
+| **GitHub personal access token** | Acts as a password so Docker can download private BU images — `read:packages` scope required — [create one here](https://github.com/settings/tokens) |
 | **BU network or VPN** | Required once to copy the credentials file from the dev server |
 
 ---
@@ -24,9 +26,9 @@ Do these two steps **once per machine**. They apply to every project you work on
 
 ---
 
-### Step 1 — Authenticate with GitHub's container registry
+### Step 1 — Give Docker permission to download private BU images
 
-buwp-local uses a private Docker image hosted on GitHub. Run this once and Docker remembers it:
+BU's WordPress image is stored privately on GitHub. This command logs Docker into GitHub so it can pull it:
 
 ```bash
 docker login ghcr.io
@@ -42,11 +44,13 @@ Expected output: `Login Succeeded`
 
 ### Step 2 — Get the credentials file
 
-The credentials file contains the database passwords, S3 keys, and Shibboleth certificates for the local environment. Copy it from the BU dev server. You must be on the BU network or connected to VPN (`vpn.bu.edu`):
+The credentials file contains the database passwords, S3 keys, and authentication certificates for the local environment. Copy it from the BU dev server using this command. You must be on the BU network or connected to VPN (`vpn.bu.edu`):
 
 ```bash
 scp user@ist-wp-app-dv01.bu.edu:/etc/ist-apps/buwp-local-credentials.json ~/Downloads/
 ```
+
+> `scp` copies files between computers over a secure connection — it works just like `cp` but with a remote path. If you'd prefer a GUI, you can use [Cyberduck](https://cyberduck.io) with SFTP to connect to `ist-wp-app-dv01.bu.edu` and download the same file.
 
 You'll import this file into macOS Keychain as part of your first project setup below. Once imported, every project picks up credentials automatically — you won't need the file again.
 
@@ -99,15 +103,17 @@ Expected output:
 npx buwp-local init --plugin    # or --theme, or --mu-plugin
 ```
 
-The `init` command creates `.buwp-local.json` and automatically sets up the volume mapping — it will point your repo root at the correct location inside the WordPress container (e.g., `/var/www/html/wp-content/plugins/my-plugin`).
+The `init` command creates a `.buwp-local.json` config file and sets up the connection between your local code and the WordPress container.
 
 **5. Add your hostname to `/etc/hosts`:**
 
-The `init` output will tell you exactly what to add. It will look like this:
+Your computer uses `/etc/hosts` to map local domain names to IP addresses — without this entry, your browser won't know how to find `my-plugin.local`. The `init` output will show you exactly what to run. It will look like this:
 
 ```bash
 echo "127.0.0.1 my-plugin.local" | sudo tee -a /etc/hosts
 ```
+
+> **`.localhost` vs `.local`:** The `init` command defaults to `.local` hostnames (e.g., `my-plugin.local`). On some Macs, `.local` is reserved for mDNS device discovery and can cause occasional slowdowns. Using `.localhost` instead (e.g., `my-plugin.localhost`) avoids this — it's a valid alternative if you experience hostname resolution issues. You can change the hostname in `.buwp-local.json` and your `/etc/hosts` entry at any time.
 
 **6. Start the environment:**
 
@@ -200,19 +206,21 @@ Launch it from Applications and wait for the whale icon in the menu bar to stop 
 
 ### 2 — Clear any competing containers
 
-Port conflicts are the most common startup failure. Any other Docker project that was left running — including other buwp-local projects — may be holding ports 80, 443, 3306, or 6379. Stop everything first:
+Every network service on your computer communicates through numbered channels called **ports**. buwp-local uses four of them: 80 (web), 443 (secure web), 3306 (database), and 6379 (cache). If any other Docker project was left running, it may already be using one of those ports — and buwp-local won't be able to start.
+
+Stop everything first:
 
 ```bash
 docker stop $(docker ps -q)
 ```
 
-This is safe to run even if nothing is running. To double-check that ports are clear:
+This is safe to run even if nothing is running. To double-check that all four ports are free:
 
 ```bash
 lsof -i :80 -i :443 -i :3306 -i :6379
 ```
 
-You should see no `LISTEN` entries. (`ESTABLISHED` and `CLOSED` entries are normal outbound connections from other apps and won't cause a conflict.)
+You should see no `LISTEN` entries in the output. (`ESTABLISHED` and `CLOSED` entries are normal outbound connections from other apps and won't cause a conflict.) If you see nothing at all, you're clear.
 
 ---
 
@@ -238,17 +246,17 @@ Access your site at: https://my-plugin.local
 
 ---
 
-### 4 — Start the Shibboleth daemon
+### 4 — Start the BU login service
 
-The Shibboleth daemon does not auto-start with the container. You need to start it manually after every `start`:
+BU's authentication system (Shibboleth) requires a background process to be running inside the container. This process doesn't start automatically — you have to start it yourself every time you run `npx buwp-local start`:
 
 ```bash
-npx buwp-local shell
+npx buwp-local shell    # Opens a terminal inside the WordPress container
 service shibd start
 exit
 ```
 
-Without this step, pages that require authentication will show a "Cannot connect to shibd process" error.
+Without this step, pages that require login will show a "Cannot connect to shibd process" error.
 
 ---
 
@@ -256,13 +264,13 @@ Without this step, pages that require authentication will show a "Cannot connect
 
 ### SSL warning
 
-The environment uses a self-signed certificate. Your browser will warn you about this. Click **Advanced → Proceed to [hostname] (unsafe)** to continue. You only need to do this once per browser session.
+buwp-local uses HTTPS (secure web) locally to match production as closely as possible. Because the SSL certificate is self-generated rather than issued by a public authority, your browser doesn't automatically trust it and will show a security warning. This is expected — it's safe to proceed. Click **Advanced → Proceed to [hostname] (unsafe)** to continue. You only need to do this once per browser session.
 
 ---
 
-### Shibboleth error after starting
+### "Cannot connect to shibd process" error
 
-If you see a "Cannot connect to shibd process" error, the Shibboleth authentication daemon hasn't started yet. This happens after every `start` (not just the first time) because the shibd service does not auto-start with the container. Fix it by starting it manually:
+BU's login background process hasn't started yet. This happens after every `start`. Fix it:
 
 ```bash
 npx buwp-local shell    # Opens a terminal inside the WordPress container
@@ -276,12 +284,14 @@ Refresh your browser. The site should now load. If it doesn't, run `npx buwp-loc
 
 ### Create a WordPress login
 
-BU sites use Shibboleth SSO in production, but locally you'll want a regular WordPress account. Create one with WP-CLI:
+BU sites use Shibboleth SSO in production, but that system requires a real BU login. Locally, you'll create a regular WordPress account instead:
 
 ```bash
 npx buwp-local wp user create user user@bu.edu --role=administrator
 npx buwp-local wp super-admin add user@bu.edu
 ```
+
+The second command grants your account **super admin** access — a level above regular administrator that lets you see the Network Admin panel and manage all sites in the local multisite installation. Without it, you won't be able to access certain admin screens.
 
 Then log in at `https://my-plugin.local/wp-login.php`.
 
@@ -299,29 +309,104 @@ To add additional plugins or themes, add entries to the `mappings` array in `.bu
 
 ### Pull real site content from production or staging
 
-A fresh local environment has only default WordPress content. If you need to work against real content from a BU site, use `snapshot-pull`:
+A fresh local environment has only default WordPress content. If you need to work against real content from a BU site, there are two ways to pull a snapshot.
+
+> **What is a snapshot?** A snapshot is a saved copy of a site's database and media files, stored in BU's shared cloud storage. Developers push snapshots from staging or devl environments so others can restore them locally.
+
+---
+
+#### Method 1 — CLI snapshot pull (recommended)
+
+Use this when you know the URL of the snapshot you want. The `--source` must match a snapshot that was previously pushed from that environment. The `--destination` is the local URL where the site will be created — use `https://` and the subsite path at the end (e.g., `/bulb`) must not already exist in your local install.
 
 ```bash
 npx buwp-local wp site-manager snapshot-pull \
-  --source=https://www.bu.edu/my-site/ \
-  --destination=http://my-plugin.local/my-site
+  --source=https://developer.bu.edu/bulb \
+  --destination=https://my-plugin.local/bulb
 ```
 
-This downloads the database and media files from the source site into your local environment. The command runs immediately — no additional processes are needed.
+The command runs synchronously and prints `Success: Snapshot pulled and installed.` when done. No background process needed.
 
-> **Note about `watch-jobs`:** The `watch-jobs` command is a separate tool for processing snapshot jobs queued through the **WordPress admin UI** (Network Admin → Site Manager). It replaces the production cron job that processes those queued jobs. You do not need `watch-jobs` when using `snapshot-pull` from the command line — `snapshot-pull` runs the import directly.
+> **What snapshots are available?** The Snapshot Management admin UI (Method 2 below) shows all available snapshots organized by source hostname. Ask a teammate maintaining the devl environment if you're unsure what's been pushed.
+
+> **PHP 8 compatibility note:** The buwp-local Docker image ships with PHP 8. Snapshots from older BU sites built on PHP 7 may show errors or blank pages after import — the pull itself will succeed, but the site may be broken. See [Pulled snapshot shows PHP errors](#pulled-snapshot-shows-php-errors) in Troubleshooting if this happens.
+
+---
+
+#### Method 2 — Snapshot Management admin UI
+
+Use this when you want to browse available snapshots and pick one from a list.
+
+**Where to find it:** Log in to your local WordPress admin → **Network Admin → Sites → Snapshots**
+
+The page has two sections:
+
+- **Push Snapshot** — enter a site URL to push a copy of that site's content to BU's shared storage. Use this to share a snapshot with other devs or to save a point-in-time copy.
+- **Pull Snapshot** — shows an accordion list of all available snapshots, organized by the hostname they came from. Expand a hostname to see its saved snapshots, then choose one to restore to a site on your local network.
+
+When you pull via the admin UI, the operation is queued as a background job. You need `watch-jobs` running in a separate terminal to process it:
+
+```bash
+# In a separate terminal — runs until you stop it with Ctrl+C
+npx buwp-local watch-jobs
+
+# Or to process just one queued job manually:
+npx buwp-local wp site-manager process-jobs
+```
+
+> **Tip:** If you only need to process a single job, `process-jobs` is simpler than running `watch-jobs` in the background. Use `watch-jobs` when you want ongoing processing (e.g., while doing a large import that spawns multiple jobs).
 
 ---
 
 ### Create a blank subsite
 
-To add a fresh empty subsite to your local multisite network:
+BU WordPress is a **multisite** installation — one WordPress instance that hosts many separate sites under a single domain (e.g., `www.bu.edu/admissions`, `www.bu.edu/law`). Your local environment mirrors this. To add a fresh empty subsite:
 
 ```bash
 npx buwp-local wp site create --slug=test-site --title="Test Site"
 ```
 
 Access it at `https://my-plugin.local/test-site/`.
+
+---
+
+## Changing the WordPress Version
+
+The Docker image ships with a specific version of WordPress. Most of the time you won't need to change it — but if you're testing compatibility with a particular version, here's how.
+
+### Check what version is running
+
+```bash
+npx buwp-local wp core version
+```
+
+### Update to a specific version
+
+```bash
+npx buwp-local wp core update --version=6.4
+```
+
+Replace `6.4` with the version you need. Your database and content are preserved. This changes only the WordPress core files inside the running container — your mapped code is untouched.
+
+### Revert to the version that ships with the image
+
+```bash
+npx buwp-local update
+```
+
+This pulls the latest Docker image and resets WordPress core back to the version baked into the image. Your **database is preserved** — content, users, and plugin settings survive. The WordPress core files are replaced.
+
+> **Good practice:** Run `npx buwp-local update` periodically even when you're not switching versions — it also picks up security patches and BU plugin updates that ship with new image releases.
+
+### PHP 8 and snapshot compatibility
+
+The current buwp-local image ships with **PHP 8**. WordPress and most modern plugins are fully compatible, but some older BU site snapshots were built on PHP 7 and will produce errors (fatal errors, blank pages, or admin screens that won't load) on the newer image.
+
+If a pulled snapshot is broken:
+
+- Check with whoever maintains that environment — they can tell you what PHP version it was built on
+- As a workaround, you can downgrade WordPress to a version that shipped with PHP 7 compatibility in mind (6.4 or earlier), but this won't fix plugins that hard-require PHP 7 syntax
+- The longer-term fix is for the source environment to be updated for PHP 8 compatibility
 
 ---
 
@@ -333,19 +418,22 @@ All commands are run from your **project directory** (where `.buwp-local.json` l
 |---|---|
 | `npx buwp-local init` | Interactive setup — creates `.buwp-local.json` |
 | `npx buwp-local start` | Start all containers |
-| `npx buwp-local start --xdebug` | Start with Xdebug enabled |
-| `npx buwp-local start --no-s3` | Start without the S3 proxy service |
-| `npx buwp-local start --no-redis` | Start without Redis |
+| `npx buwp-local start --xdebug` | Start with Xdebug enabled (step-through PHP debugging) |
+| `npx buwp-local start --no-s3` | Start without the S3 file storage service |
+| `npx buwp-local start --no-redis` | Start without the Redis cache |
 | `npx buwp-local stop` | Stop containers — your database and content are preserved |
 | `npx buwp-local destroy` | Remove all containers and data — full reset |
 | `npx buwp-local logs` | View recent logs from all containers |
 | `npx buwp-local logs --follow` | Stream logs in real time |
 | `npx buwp-local shell` | Open a bash shell inside the WordPress container |
 | `npx buwp-local wp <command>` | Run any WP-CLI command inside the container |
+| `npx buwp-local wp core version` | Show the currently running WordPress version |
+| `npx buwp-local wp core update --version=X.X` | Switch to a specific WordPress version |
 | `npx buwp-local wp plugin list` | List all plugins and their status |
 | `npx buwp-local wp plugin activate <slug>` | Activate a plugin |
 | `npx buwp-local wp cache flush` | Flush the Redis object cache |
-| `npx buwp-local watch-jobs` | Process admin UI snapshot queue jobs (run in a separate terminal) |
+| `npx buwp-local watch-jobs` | Process admin UI snapshot queue — runs continuously, mirrors production cron (separate terminal) |
+| `npx buwp-local wp site-manager process-jobs` | Process a single queued snapshot job |
 | `npx buwp-local update` | Pull the latest WordPress image, preserve your database |
 | `npx buwp-local config --validate` | Validate your `.buwp-local.json` |
 | `npx buwp-local keychain status` | Check that credentials are loaded correctly |
@@ -379,7 +467,7 @@ Your database and any content you've created are preserved. Run `npx buwp-local 
 Error: Bind for 0.0.0.0:3306 failed: port is already allocated
 ```
 
-Another Docker container is holding that port. Run `docker stop $(docker ps -q)` to clear everything, then `npx buwp-local start` again.
+Another Docker container is already using that port. Run `docker stop $(docker ps -q)` to stop everything, then `npx buwp-local start` again.
 
 ---
 
@@ -401,17 +489,49 @@ Your GitHub personal access token is expired or missing the `read:packages` scop
 
 ### Credentials missing on start
 
-```
+```bash
 npx buwp-local keychain status
 ```
 
-This shows which of the 15 credentials are loaded. If they're missing, repeat the keychain import from [Step 3](#step-3--import-credentials-into-macos-keychain).
+This shows which of the 15 credentials are loaded. If they're missing, repeat the keychain import:
+
+```bash
+npx buwp-local keychain setup --file ~/Downloads/buwp-local-credentials.json
+```
 
 ---
 
 ### scp fails — connection refused or timeout
 
 You are not on the BU network. Connect via Cisco AnyConnect at `vpn.bu.edu` and retry.
+
+---
+
+### Shibboleth crashes after it was working
+
+The BU login background process can crash intermittently — not just on first start. You'll see the same "Cannot connect to shibd process" error even though you already started it. The fix is to clear the stale lock file before restarting:
+
+```bash
+npx buwp-local shell
+rm -f /var/run/shibboleth/shibd.sock && service shibd start
+exit
+```
+
+Or as a one-liner without entering the shell:
+
+```bash
+docker exec $(docker ps --filter "name=wordpress" --format "{{.Names}}" | head -1) bash -c "rm -f /var/run/shibboleth/shibd.sock && service shibd start"
+```
+
+---
+
+### Pulled snapshot shows PHP errors
+
+The site loads blank, shows a fatal error, or the WordPress admin won't open after a snapshot pull.
+
+The snapshot was built on a PHP 7 environment and the buwp-local image ships with PHP 8. The import succeeded, but PHP 8 is not fully backward-compatible with older code.
+
+Check with the team that maintains the source environment. If you need an older PHP environment for testing, ask in Slack — older image tags may be available.
 
 ---
 
@@ -470,6 +590,7 @@ The `init` command generates this file for you. Here's a full example with all f
     }
   ],
   "env": {
+    "WP_ENVIRONMENT_TYPE": "local",
     "WP_DEBUG": true,
     "XDEBUG": false
   }
@@ -478,12 +599,12 @@ The `init` command generates this file for you. Here's a full example with all f
 
 | Field | What it does |
 |---|---|
-| `projectName` | Unique identifier for this project — used for Docker container names |
+| `projectName` | Unique name for this project — used to label Docker containers |
 | `hostname` | The local URL you'll access in your browser |
-| `multisite` | `true` for a BU-style multisite network |
-| `services` | Toggle Redis, S3 proxy, and Shibboleth on or off |
-| `ports` | Local port bindings — change these if another project is using the defaults |
-| `mappings` | Maps local directories into the container for live code sync |
+| `multisite` | `true` for a BU-style multisite network (almost always leave this as `true`) |
+| `services` | Toggle individual backend services on or off |
+| `ports` | The port numbers Docker listens on — only change these if another project is already using the defaults |
+| `mappings` | Connects your local directories to paths inside the WordPress container |
 | `env` | Environment variables passed into the WordPress container |
 
 ---
