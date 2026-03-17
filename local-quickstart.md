@@ -12,10 +12,10 @@ The environment includes the same backend services as production — Redis (cach
 
 | Requirement | Notes |
 |---|---|
-| **Docker Desktop** | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) — install and make sure it can run |
-| **Node.js 18+** | [nodejs.org](https://nodejs.org) |
+| **Docker Desktop** | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop) — install and make sure it can run. [OrbStack](https://orbstack.dev) and [Podman](https://podman.io) also work if you prefer a lighter alternative. |
+| **Node.js 18+** | [nodejs.org](https://nodejs.org) — after installing, verify with `node -v` (should print `v18.x` or higher) |
 | **GitHub account** | Must be a member of the [bu-ist](https://github.com/bu-ist) org |
-| **GitHub personal access token** | Acts as a password so Docker can download private BU images — `read:packages` scope required — [create one here](https://github.com/settings/tokens) |
+| **GitHub personal access token** | Acts as a password so Docker can download private BU images — `read:packages` scope required — [create one here](https://github.com/settings/tokens). Choose a **classic token** if you plan to use this across multiple projects — fine-grained tokens are scoped to specific repos and won't work here. |
 | **BU network or VPN** | Required once to copy the credentials file from the dev server |
 
 ---
@@ -47,8 +47,10 @@ Expected output: `Login Succeeded`
 The credentials file contains the database passwords, S3 keys, and authentication certificates for the local environment. Copy it from the BU dev server using this command. You must be on the BU network or connected to VPN (`vpn.bu.edu`):
 
 ```bash
-scp user@ist-wp-app-dv01.bu.edu:/etc/ist-apps/buwp-local-credentials.json ~/Downloads/
+scp <your-bu-username>@ist-wp-app-dv01.bu.edu:/etc/ist-apps/buwp-local-credentials.json ~/Downloads/
 ```
+
+> **Replace `<your-bu-username>`** with your actual BU login (e.g., `jsmith`). Don't copy-paste the command as-is — the angle brackets are a placeholder.
 
 > `scp` copies files between computers over a secure connection — it works just like `cp` but with a remote path. If you'd prefer a GUI, you can use [Cyberduck](https://cyberduck.io) with SFTP to connect to `ist-wp-app-dv01.bu.edu` and download the same file.
 
@@ -103,15 +105,27 @@ Expected output:
 npx buwp-local init --plugin    # or --theme, or --mu-plugin
 ```
 
-The `init` command creates a `.buwp-local.json` config file and sets up the connection between your local code and the WordPress container.
+This starts an **interactive setup wizard** — it will ask you a series of questions in the terminal. Read each prompt before pressing Enter. Here's what it will ask and what to choose:
+
+| Prompt | What it means | Recommended answer |
+|---|---|---|
+| **Hostname** | The `.local` domain name for your site | Accept the default (based on your folder name) |
+| **Shibboleth** | BU's login system — enables logging in with a WordPress account locally | **Yes** |
+| **S3 proxy** | Mirrors BU's cloud file storage so uploaded images work locally | **Yes** unless you don't need media |
+| **Redis** | A fast cache layer that matches production | **Yes** |
+| **Xdebug** | A PHP debugger that lets you step through code line-by-line in your editor | **No** unless you plan to debug PHP (you can enable it later with `--xdebug`) |
+
+When it finishes, `init` creates a `.buwp-local.json` config file that captures your choices. You can edit this file later to change any setting.
 
 **5. Add your hostname to `/etc/hosts`:**
 
-Your computer uses `/etc/hosts` to map local domain names to IP addresses — without this entry, your browser won't know how to find `my-plugin.local`. The `init` output will show you exactly what to run. It will look like this:
+Your computer uses `/etc/hosts` to map local domain names to IP addresses — without this entry, your browser won't know how to find your local site. The `init` output will print the exact command for you. It will look like this:
 
 ```bash
 echo "127.0.0.1 my-plugin.local" | sudo tee -a /etc/hosts
 ```
+
+> **Use the hostname that `init` chose for you** — it's the `.local` domain name shown in the `init` output and saved in `.buwp-local.json` under `"hostname"`. It's based on your project's folder name (e.g., folder `my-plugin` → hostname `my-plugin.local`). The value here must match exactly.
 
 > **`.localhost` vs `.local`:** The `init` command defaults to `.local` hostnames (e.g., `my-plugin.local`). On some Macs, `.local` is reserved for mDNS device discovery and can cause occasional slowdowns. Using `.localhost` instead (e.g., `my-plugin.localhost`) avoids this — it's a valid alternative if you experience hostname resolution issues. You can change the hostname in `.buwp-local.json` and your `/etc/hosts` entry at any time.
 
@@ -161,7 +175,9 @@ When macOS asks for Keychain access, click **Always Allow**. When asked whether 
 npx buwp-local init --sandbox
 ```
 
-You can also run `npx buwp-local init` without a flag to choose the sandbox type from the interactive prompt.
+This starts an **interactive setup wizard** in the terminal — it will ask about your hostname, which services to enable, and other options. Read each prompt before pressing Enter. See the [table in Pattern A, step 4](#pattern-a--single-plugin-or-theme) for what each question means and the recommended answers.
+
+You can also run `npx buwp-local init` without a flag to choose the project type from the interactive prompt.
 
 **5. Edit `.buwp-local.json` to map your repos:**
 
@@ -181,6 +197,8 @@ Open the generated `.buwp-local.json` and add a `mappings` entry for each repo. 
 ```
 
 **6. Add your hostname to `/etc/hosts`:**
+
+Use the hostname that `init` chose for you (printed in the `init` output and saved in `.buwp-local.json` under `"hostname"`):
 
 ```bash
 echo "127.0.0.1 my-sandbox.local" | sudo tee -a /etc/hosts
@@ -284,14 +302,21 @@ Refresh your browser. The site should now load. If it doesn't, run `npx buwp-loc
 
 ### Create a WordPress login
 
-BU sites use Shibboleth SSO in production, but that system requires a real BU login. Locally, you'll create a regular WordPress account instead:
+BU sites use Shibboleth SSO in production, but that system requires a real BU login. Locally, you'll create a regular WordPress account instead.
+
+> **If you answered "yes" to Shibboleth during `init`**, a default admin account was already created for you. You only need the second command below to grant super admin access. Skip the `user create` line.
 
 ```bash
-npx buwp-local wp user create user user@bu.edu --role=administrator
-npx buwp-local wp super-admin add user@bu.edu
+# Skip this line if Shibboleth was enabled during init — the account already exists:
+npx buwp-local wp user create <your-username> <your-username>@bu.edu --role=administrator
+
+# Always run this — it grants access to Network Admin screens:
+npx buwp-local wp super-admin add <your-username>@bu.edu
 ```
 
-The second command grants your account **super admin** access — a level above regular administrator that lets you see the Network Admin panel and manage all sites in the local multisite installation. Without it, you won't be able to access certain admin screens.
+> **Replace `<your-username>`** with whatever username you want (e.g., `keri`, `kayla`). This is a local-only account — it doesn't need to match your real BU login.
+
+The `super-admin add` command grants **super admin** access — a level above regular administrator that lets you see the Network Admin panel and manage all sites in the local multisite installation. Without it, you won't be able to access certain admin screens.
 
 Then log in at `https://my-plugin.local/wp-login.php`.
 
